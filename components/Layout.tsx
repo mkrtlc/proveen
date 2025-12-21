@@ -12,6 +12,8 @@ import { Icon } from './Icon';
 
 const Sidebar: React.FC = () => {
   const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [userName, setUserName] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
 
   useEffect(() => {
     // Check if Material Symbols font is loaded
@@ -24,7 +26,7 @@ const Sidebar: React.FC = () => {
           return;
         }
       }
-      
+
       // Fallback: wait for fonts to load
       if (document.fonts && document.fonts.ready) {
         document.fonts.ready.then(() => {
@@ -37,6 +39,35 @@ const Sidebar: React.FC = () => {
     };
 
     checkFontLoaded();
+  }, []);
+
+  // Fetch user data
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const name = user.user_metadata?.name || user.email?.split('@')[0] || '';
+          setUserName(name);
+          setUserEmail(user.email || '');
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      }
+    };
+
+    fetchUserData();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const name = session.user.user_metadata?.name || session.user.email?.split('@')[0] || '';
+        setUserName(name);
+        setUserEmail(session.user.email || '');
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const navItems = [
@@ -73,9 +104,9 @@ const Sidebar: React.FC = () => {
         ) : (
           <>
             {navItems.map((item) => (
-              <NavLink 
-                key={item.to} 
-                to={item.to} 
+              <NavLink
+                key={item.to}
+                to={item.to}
                 end={item.to === '/'}
                 className={({ isActive }) => `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group ${isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-50'}`}
               >
@@ -86,8 +117,8 @@ const Sidebar: React.FC = () => {
             <div className="my-4 border-t border-gray-100"></div>
             <div className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Settings</div>
             {settingsItems.map((item) => (
-              <NavLink 
-                key={item.to} 
+              <NavLink
+                key={item.to}
                 to={item.to}
                 className={({ isActive }) => `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group ${isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-50'}`}
               >
@@ -99,15 +130,12 @@ const Sidebar: React.FC = () => {
         )}
       </nav>
       <div className="p-4 border-t border-gray-100">
-        <div className="bg-gray-50 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-text-main">Pro Plan</span>
-            <span className="text-xs text-primary font-medium cursor-pointer">Upgrade</span>
+        <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer">
+          <div className="size-9 rounded-full bg-cover bg-center border border-gray-200 shadow-sm shrink-0" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuDYWcVaCpc_AHvteRWcO6zheKA6OBOkijtvpzgXKIWeScCK_ETFMVt44n8ZH7a1LgrQO9mqTerB1LnUnwoQepC_P62zQOHhcld2CFxukH8tvwi3omQf62DZ9aPDYt0uwDY7fRgiSJTKHjv-nRshi7_22Yk-cj2nz_J6hNnzzOI4P-FynOgCs-AO5VceglbCxwGs9pesL3pn7VtqwKtUXI6aSzdscQ7URR8h0lnAZelhP-6mToIxIV4UiqkwQPjTOB3kQ9v6UcIfWvfJ')" }}></div>
+          <div className="flex flex-col overflow-hidden">
+            <span className="text-sm font-medium text-text-main truncate">{userName || 'User'}</span>
+            <span className="text-xs text-gray-500 truncate">{userEmail || 'Admin'}</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
-            <div className="bg-primary h-1.5 rounded-full" style={{ width: '75%' }}></div>
-          </div>
-          <div className="text-xs text-gray-500">75% of creatives used</div>
         </div>
       </div>
     </aside>
