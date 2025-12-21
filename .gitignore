@@ -13,6 +13,7 @@ node_modules/
 .env.development.local
 .env.test.local
 .env.production.local
+*.local
 
 # Logs
 logs
@@ -28,14 +29,23 @@ lerna-debug.log*
 Thumbs.db
 
 # IDE
-.vscode/
-.idea/
+.vscode/*
+!.vscode/extensions.json
+.idea
 *.swp
 *.swo
+*.sw?
 *~
+
+# Windows/Visual Studio
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
 # Build outputs
 dist/
+dist-ssr/
 build/
 .next/
 out/
@@ -44,6 +54,13 @@ out/
 coverage/
 .nyc_output/
 
+
 # Temporary files
 *.tmp
 .cache/
+
+# Local Environment & Scratch
+local/
+.venv/
+venv/
+env/
