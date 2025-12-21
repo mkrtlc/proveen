@@ -27,6 +27,29 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ isOpen, onClose }) 
     }
   }, [isOpen, dispatch]);
 
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        alert('File size too large. Please upload an image smaller than 2MB.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAvatarPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleClickUpload = () => {
+    fileInputRef.current?.click();
+  };
+
   // Reset form when modal opens/closes
   useEffect(() => {
     if (isOpen) {
@@ -36,6 +59,7 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ isOpen, onClose }) 
       setRating(0);
       setHoveredRating(null);
       setSelectedBrandId('');
+      setAvatarPreview(null);
     }
   }, [isOpen]);
 
@@ -43,7 +67,7 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ isOpen, onClose }) 
 
   const handleAdd = async () => {
     if (!name || !content) return;
-    
+
     const newEntry: Testimonial & { brandId?: string } = {
       id: Date.now().toString(),
       customerName: name,
@@ -52,11 +76,11 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ isOpen, onClose }) 
       rating,
       date: new Date().toISOString(),
       status: 'Unused',
-      avatar: `https://picsum.photos/seed/${name}/100/100`,
+      avatar: avatarPreview || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
       source: 'Direct',
       brandId: selectedBrandId || undefined
     };
-    
+
     await dispatch(addTestimonial(newEntry));
     onClose();
   };
@@ -84,30 +108,30 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ isOpen, onClose }) 
             <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-text-main">Customer Name *</label>
-                <input 
-                  value={name} 
-                  onChange={(e) => setName(e.target.value)} 
-                  className="w-full h-11 rounded-lg border-gray-200 bg-background-light text-sm focus:border-primary focus:ring-primary/20 placeholder:text-text-muted/50" 
-                  placeholder="e.g. Sarah Jenkins" 
-                  type="text" 
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full h-11 rounded-lg border-gray-200 bg-background-light text-sm focus:border-primary focus:ring-primary/20 placeholder:text-text-muted/50"
+                  placeholder="e.g. Sarah Jenkins"
+                  type="text"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-text-main">Company / Title</label>
-                <input 
-                  value={company} 
-                  onChange={(e) => setCompany(e.target.value)} 
-                  className="w-full h-11 rounded-lg border-gray-200 bg-background-light text-sm focus:border-primary focus:ring-primary/20 placeholder:text-text-muted/50" 
-                  placeholder="e.g. VP Marketing at Acme" 
-                  type="text" 
+                <input
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                  className="w-full h-11 rounded-lg border-gray-200 bg-background-light text-sm focus:border-primary focus:ring-primary/20 placeholder:text-text-muted/50"
+                  placeholder="e.g. VP Marketing at Acme"
+                  type="text"
                 />
               </div>
               <div className="sm:col-span-2 flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-text-main">Testimonial *</label>
-                <textarea 
-                  value={content} 
-                  onChange={(e) => setContent(e.target.value)} 
-                  className="w-full rounded-lg border-gray-200 bg-background-light text-sm focus:border-primary focus:ring-primary/20 placeholder:text-text-muted/50 min-h-[120px] resize-y" 
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  className="w-full rounded-lg border-gray-200 bg-background-light text-sm focus:border-primary focus:ring-primary/20 placeholder:text-text-muted/50 min-h-[120px] resize-y"
                   placeholder="Enter the customer's feedback here..."
                 />
               </div>
@@ -117,18 +141,18 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ isOpen, onClose }) 
                   {[1, 2, 3, 4, 5].map((s) => {
                     const isFilled = rating >= s;
                     const isHovered = hoveredRating !== null && s <= hoveredRating;
-                    
+
                     let starColor = 'text-gray-200';
                     if (isFilled) {
                       starColor = 'text-black';
                     } else if (isHovered) {
                       starColor = 'text-[#F4B400]';
                     }
-                    
+
                     return (
-                      <button 
-                        key={s} 
-                        onClick={() => setRating(s)} 
+                      <button
+                        key={s}
+                        onClick={() => setRating(s)}
                         onMouseEnter={() => setHoveredRating(s)}
                         onMouseLeave={() => setHoveredRating(null)}
                         className="hover:scale-110 transition-all duration-150"
@@ -161,12 +185,33 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ isOpen, onClose }) 
             <div className="lg:col-span-4 flex flex-col gap-5">
               <div className="flex flex-col gap-1.5 h-full">
                 <label className="text-sm font-medium text-text-main">Customer Photo</label>
-                <div className="flex-1 border-2 border-dashed border-gray-200 rounded-lg bg-background-light hover:bg-gray-100 transition-colors cursor-pointer flex flex-col items-center justify-center p-4 min-h-[140px] text-center group">
-                  <div className="size-10 rounded-full bg-white flex items-center justify-center shadow-sm mb-2 group-hover:scale-110 transition-transform">
-                    <Icon name="add_a_photo" className="text-primary" />
-                  </div>
-                  <span className="text-xs font-medium text-primary">Click to upload</span>
-                  <span className="text-[10px] text-text-muted mt-1">SVG, PNG, JPG or GIF (max. 800x400px)</span>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  className="hidden"
+                  accept="image/*"
+                />
+                <div
+                  onClick={handleClickUpload}
+                  className="flex-1 border-2 border-dashed border-gray-200 rounded-lg bg-background-light hover:bg-gray-100 transition-colors cursor-pointer flex flex-col items-center justify-center p-4 min-h-[140px] text-center group relative overflow-hidden"
+                >
+                  {avatarPreview ? (
+                    <>
+                      <img src={avatarPreview} alt="Preview" className="w-24 h-24 object-cover rounded-full mb-2 shadow-md z-10" />
+                      <span className="text-xs font-medium text-primary z-10 bg-white/80 px-2 py-1 rounded-full">Click to change</span>
+                      <div className="absolute inset-0 bg-white/50 z-0"></div>
+                      <img src={avatarPreview} className="absolute inset-0 w-full h-full object-cover opacity-10 blur-sm" />
+                    </>
+                  ) : (
+                    <>
+                      <div className="size-10 rounded-full bg-white flex items-center justify-center shadow-sm mb-2 group-hover:scale-110 transition-transform">
+                        <Icon name="add_a_photo" className="text-primary" />
+                      </div>
+                      <span className="text-xs font-medium text-primary">Click to upload</span>
+                      <span className="text-[10px] text-text-muted mt-1">SVG, PNG, JPG or GIF (max. 2MB)</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

@@ -41,14 +41,37 @@ export class WiroAIService {
         }
 
         try {
-            // 1. Prepare Prompt
-            const prompt = this.constructPrompt(input, brandConfig);
+            // 1. Validate Logo BEFORE generating prompt
+            // This ensures that if we have an unsupported logo (like SVG), the prompt KNOWS about it
+            // and forcefully requests "Text Only" style instead of asking for a logo that won't be uploaded.
+            let validLogoUrl = brandConfig?.logos?.primary;
+            if (validLogoUrl) {
+                // Check for SVG
+                const isSvg = validLogoUrl.toLowerCase().includes('.svg');
+                if (isSvg) {
+                    console.warn('Unsupported SVG logo detected. Forcing text-only mode.');
+                    validLogoUrl = undefined;
+                }
+            }
+
+            // Create effective config for prompt generation
+            const effectiveBrandConfig = brandConfig ? {
+                ...brandConfig,
+                logos: {
+                    ...brandConfig.logos,
+                    primary: validLogoUrl
+                }
+            } : undefined;
+
+            // 1. Prepare Prompt using the effective config (with potentially removed logo)
+            const prompt = this.constructPrompt(input, effectiveBrandConfig);
 
             // 2. Submit Task
             // Get specs again to pass technical params (redundant lookup but clean)
             const specs = this.PLATFORM_SPECS[input.socialPlatform][input.format];
 
-            const taskId = await this.submitTask(apiKey, apiSecret, prompt, specs.ratio, specs.resolution, brandConfig?.logos.primary);
+            // Pass the validLogoUrl to submitTask (if it's undefined, no image will be uploaded)
+            const taskId = await this.submitTask(apiKey, apiSecret, prompt, specs.ratio, specs.resolution, validLogoUrl);
 
             // 3. Poll for Result
             const wiroImageUrl = await this.pollTask(apiKey, apiSecret, taskId);
@@ -88,7 +111,7 @@ export class WiroAIService {
             try {
                 // Check if logo is SVG (Wiro AI API doesn't support SVG, only: png, jpg, jpeg, gif)
                 const isSvg = logoUrl.toLowerCase().includes('.svg') || logoUrl.toLowerCase().endsWith('.svg');
-                
+
                 if (isSvg) {
                     console.warn("SVG logo files are not supported by Wiro AI API. Skipping logo upload. Generation will continue without logo.");
                     // Skip SVG files - generation can proceed without logo
@@ -99,7 +122,7 @@ export class WiroAIService {
                     // Determine filename from URL
                     const urlPath = logoUrl.split('?')[0]; // Remove query params
                     const urlFilename = urlPath.split('/').pop() || 'logo.png';
-                    
+
                     // Determine file extension from URL or default to png
                     if (urlFilename.includes('.')) {
                         filename = urlFilename;
@@ -116,14 +139,14 @@ export class WiroAIService {
                     if (!response.ok) {
                         throw new Error(`Failed to fetch logo: ${response.status} ${response.statusText}`);
                     }
-                    
+
                     // Get the blob with proper content type
                     blob = await response.blob();
-                    
+
                     // Double-check MIME type to ensure it's a supported format
                     const mimeType = blob.type.toLowerCase();
                     const supportedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
-                    
+
                     if (!supportedTypes.includes(mimeType) && mimeType !== '') {
                         // If MIME type is set and not supported, skip it
                         console.warn(`Logo MIME type "${mimeType}" is not supported. Supported types: png, jpg, jpeg, gif. Skipping logo upload.`);
@@ -252,15 +275,15 @@ export class WiroAIService {
                 colors = `Brand Colors: ${colorParts.join(', ')}. Use these colors throughout the design - primary for main elements, secondary for supporting elements, accent for highlights, background for the base, and text color for all text content.`;
             }
         }
-        
-        const font = brandConfig?.typography?.fontFamily || 'Modern Sans-Serif';
+
+        const font = brandConfig?.typography?.fontFamily || 'Helvetica';
 
         const specs = this.PLATFORM_SPECS[input.socialPlatform][input.format];
 
         // Use full testimonial content instead of truncating
         // The API should handle long text appropriately
         const testimonialText = input.testimonialContent;
-        
+
         // Build reviewer information section if provided
         let reviewerSection = '';
         if (input.reviewerInfo) {
@@ -281,9 +304,14 @@ export class WiroAIService {
         }
 
         // Add additional prompt instructions if provided
-        const additionalInstructions = input.additionalPrompt 
-            ? `\n\nAdditional Design Modifications:\n- ${input.additionalPrompt}\n` 
+        const additionalInstructions = input.additionalPrompt
+            ? `\n\nAdditional Design Modifications:\n- ${input.additionalPrompt}\n`
             : '';
+
+        // Determine Logo instruction
+        const logoInstruction = brandConfig?.logos?.primary
+            ? 'Logo: Incorporate the logo from the input image naturally into the composition (e.g. bottom corner or watermark).'
+            : `Brand Name: Display the brand name "${brandConfig?.name || 'Brand'}" TEXT ONLY in the design (e.g. bottom corner or watermark). DO NOT generate a logo icon or symbol. Use text only for the brand identity.`;
 
         return `Create a high-quality, professional social media image for ${input.socialPlatform}.
         Format: ${input.format} (${specs.ratio}). ${specs.promptSuffix}
@@ -292,15 +320,17 @@ export class WiroAIService {
 Brand Identity:
 - ${colors}
 - Style: Professional, minimal, premium.
-- Logo: Incorporate the logo from the input image naturally into the composition (e.g. bottom corner or watermark).
+- ${logoInstruction}
 
 Content:
 - Testimonial Text to Display: "${testimonialText}"
-- Typography: ${font}, bold and legible. Use the brand text color for all text.${reviewerSection}${input.cta ? `\n- Call to Action: Display "${input.cta}" prominently, styled as a button or action text using the brand primary color.` : ''}${additionalInstructions}
+- Typography: ${font}, bold and legible. Use brand-compliant font colors that ensure high contrast against the background. Avoid black text on dark backgrounds. Ensure all text fits within the canvas with generous padding (at least 15% from all edges) to prevent cutoff.${reviewerSection}${input.cta ? `\n- Call to Action: Display "${input.cta}" prominently, styled as a button or action text using the brand primary color.` : ''}${additionalInstructions}
 
 Visuals:
+- Layout: Center-weighted composition with safe zones. Keep text away from edges.
 - Background: Use the brand background color as the base. Create abstract gradient or soft texture incorporating brand primary, secondary, and accent colors.
-- Color Application: Apply brand colors strategically - primary for main elements and CTAs, secondary for supporting graphics, accent for highlights and emphasis.
+- Color Application: Apply brand colors strategically - primary for main elements and CTAs, secondary for supporting elements, accent for highlights and emphasis.
+- Contrast: Ensure all text is easily readable. Do not place dark text on dark backgrounds. Use light text/white if the background is dark.
 - Atmosphere: Inspiring, trustworthy, glowing.
 - Lighting: Soft studio lighting.
 - Quality: Photorealistic, 4k, core detail.`;

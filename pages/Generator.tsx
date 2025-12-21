@@ -9,6 +9,7 @@ import { SocialPlatform } from '../lib/layers/types';
 import { Testimonial } from '../types';
 import { Skeleton } from '../components/Skeleton';
 import { Icon } from '../components/Icon';
+import { OpenRouterService } from '../lib/layers/openrouter';
 
 const Generator: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -49,10 +50,10 @@ const Generator: React.FC = () => {
   // Combine testimonials and reviews (same logic as Library.tsx)
   const reviewsByBrand = brands.reduce((acc, brand) => {
     const brandSources = sources.filter(s => s.brandId === brand.id);
-    const brandReviews = brandSources.flatMap(source => 
-      source.reviews.map(r => ({ 
-        ...r, 
-        sourceId: source.id, 
+    const brandReviews = brandSources.flatMap(source =>
+      source.reviews.map(r => ({
+        ...r,
+        sourceId: source.id,
         sourceType: source.type,
         brandId: brand.id,
         brandName: brand.name
@@ -70,11 +71,11 @@ const Generator: React.FC = () => {
 
   const unassignedReviews = sources
     .filter(s => !s.brandId)
-    .flatMap(source => 
-      source.reviews.map(r => ({ 
-        ...r, 
-        sourceId: source.id, 
-        sourceType: source.type 
+    .flatMap(source =>
+      source.reviews.map(r => ({
+        ...r,
+        sourceId: source.id,
+        sourceType: source.type
       }))
     )
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -82,7 +83,7 @@ const Generator: React.FC = () => {
   // Combine testimonials and reviews for unified view
   const allTestimonials: Array<Testimonial & { sourceType?: string; sourceId?: string; brandId?: string; brandName?: string }> = [
     ...testimonials.map(t => ({ ...t, sourceType: 'manual' })),
-    ...Object.values(reviewsByBrand).flatMap(({ reviews }) => 
+    ...Object.values(reviewsByBrand).flatMap(({ reviews }) =>
       reviews.map(r => ({
         id: r.id,
         customerName: r.author,
@@ -236,16 +237,22 @@ const Generator: React.FC = () => {
     // Parse testimonial content to avoid title/description repetition
     let testimonialContent = selectedTestimonial.content.trim();
     const doubleNewlineIndex = testimonialContent.indexOf('\n\n');
-    
+
     if (doubleNewlineIndex > 0) {
       const title = testimonialContent.substring(0, doubleNewlineIndex).trim();
       const description = testimonialContent.substring(doubleNewlineIndex + 2).trim();
-      
+
       // If title and description are the same, only use description
       if (title === description) {
         testimonialContent = description;
+      } else if (description.startsWith(title)) {
+        // If description starts with title, use only description
+        testimonialContent = description;
+      } else if (title.length > 20 && description.includes(title)) {
+        // If title is substantial and contained in description, use only description
+        testimonialContent = description;
       } else {
-        // Use both title and description if they're different
+        // Use both title and description if they're different content
         testimonialContent = `${title}\n\n${description}`;
       }
     }
@@ -255,97 +262,125 @@ const Generator: React.FC = () => {
       testimonialContent = `${testimonialContent}\n\nAdditional Instructions: ${additionalPrompt}`;
     }
 
-    // Get brand logo - use actual brand logo if available, otherwise fallback to Proveen logo
-    const brandLogo = (brandLogos as any)?.primary || '/assets/proveen_logo.png';
+    // Get brand logo - use actual brand logo if available, otherwise undefined (will use Brand Name fallback in Wiro prompt)
+    // Removed old fallback: const brandLogo = (brandLogos as any)?.primary || '/assets/proveen_logo.png';
+    const brandLogo = (brandLogos as any)?.primary;
 
-    const generatePayload: { input: any; brandConfig?: any; brandId?: string | null } = {
-      input: {
-        testimonialContent: testimonialContent,
-        format: format,
-        socialPlatform: socialPlatform,
-        maxLength: format === 'Story' ? 200 : 100,
-        cta: cta,
-        reviewerInfo: {
-          name: selectedTestimonial.customerName,
-          avatar: selectedTestimonial.avatar,
-          rating: selectedTestimonial.rating,
-          includeName: includeReviewerName,
-          includeAvatar: includeReviewerAvatar,
-          includeRating: includeReviewerRating
-        },
-        additionalPrompt: typeof additionalPrompt === 'string' ? additionalPrompt : undefined
-      },
-      brandConfig: {
-        colors: brandColors,
-        logos: { primary: brandLogo },
-        typography: { fontFamily: brandTypography?.fontFamily || 'Inter' }
-      }
-    };
-    
-    // Use testimonial's brandId if available, otherwise use currentBrandId
-    const testimonialBrandId = selectedTestimonial.brandId;
-    if (testimonialBrandId) {
-      generatePayload.brandId = testimonialBrandId;
-    } else if (currentBrandId) {
-      generatePayload.brandId = currentBrandId;
-    }
+    // Step 1: Correct Grammar (New Step)
+    // We'll wrap the generation process in an async function to handle the correction await
+    const runGenerationFlow = async () => {
+      try {
+        // Update progress to show we are starting
+        setLoadingProgress(10);
 
-    // If this is an edit, save current version to history before generating new one
-    if (additionalPrompt && generatedCreatives.length > 0) {
-      const currentVersion = {
-        id: Date.now().toString() + '-prev',
-        imageUrl: generatedCreatives[0].imageUrl,
-        prompt: 'Original version',
-        timestamp: new Date().toISOString()
-      };
-      setEditHistory(prev => {
-        // Check if we already have the original to avoid duplicates
-        const hasOriginal = prev.some(e => e.prompt === 'Original version');
-        if (!hasOriginal) {
-          return [currentVersion, ...prev].slice(0, 5);
+        let correctedContent = testimonialContent;
+        try {
+          correctedContent = await OpenRouterService.correctGrammar(testimonialContent);
+          // Bump progress after correction
+          setLoadingProgress(30);
+        } catch (e) {
+          console.warn("Grammar correction failed, using original text", e);
+          // Continue with original text
         }
-        return prev;
-      });
-    }
 
-    dispatch(generateCreative(generatePayload))
-      .then((result: any) => {
-        clearInterval(progressInterval);
-        setLoadingProgress(100);
-        
-        // If this is an edit, add new version to history
-        if (additionalPrompt && result.payload?.response?.imageUrl) {
-          const newEdit = {
-            id: Date.now().toString(),
-            imageUrl: result.payload.response.imageUrl,
-            prompt: additionalPrompt,
+        const generatePayload: { input: any; brandConfig?: any; brandId?: string | null } = {
+          input: {
+            testimonialContent: correctedContent, // Use corrected content
+            format: format,
+            socialPlatform: socialPlatform,
+            maxLength: format === 'Story' ? 200 : 100,
+            cta: cta,
+            reviewerInfo: {
+              name: selectedTestimonial.customerName,
+              avatar: selectedTestimonial.avatar,
+              rating: selectedTestimonial.rating,
+              includeName: includeReviewerName,
+              includeAvatar: includeReviewerAvatar,
+              includeRating: includeReviewerRating
+            },
+            additionalPrompt: typeof additionalPrompt === 'string' ? additionalPrompt : undefined
+          },
+          brandConfig: {
+            name: selectedTestimonial.brandName || brands.find(b => b.id === currentBrandId)?.name,
+            colors: brandColors,
+            logos: { primary: brandLogo },
+            typography: { fontFamily: brandTypography?.fontFamily || 'Inter' }
+          }
+        };
+
+        // Use testimonial's brandId if available, otherwise use currentBrandId
+        const testimonialBrandId = selectedTestimonial.brandId;
+        if (testimonialBrandId) {
+          generatePayload.brandId = testimonialBrandId;
+        } else if (currentBrandId) {
+          generatePayload.brandId = currentBrandId;
+        }
+
+        // If this is an edit, save current version to history before generating new one
+        if (additionalPrompt && generatedCreatives.length > 0) {
+          const currentVersion = {
+            id: Date.now().toString() + '-prev',
+            imageUrl: generatedCreatives[0].imageUrl,
+            prompt: 'Original version',
             timestamp: new Date().toISOString()
           };
           setEditHistory(prev => {
-            const updated = [newEdit, ...prev].slice(0, 5); // Keep only last 5
-            return updated;
+            // Check if we already have the original to avoid duplicates
+            const hasOriginal = prev.some(e => e.prompt === 'Original version');
+            if (!hasOriginal) {
+              return [currentVersion, ...prev].slice(0, 5);
+            }
+            return prev;
           });
         }
-        
-        // Reset progress after showing 100% briefly
-        setTimeout(() => setLoadingProgress(0), 500);
-      })
-      .catch((error: any) => {
-        // Clear interval on error
+
+        dispatch(generateCreative(generatePayload))
+          .then((result: any) => {
+            clearInterval(progressInterval);
+            setLoadingProgress(100);
+
+            // If this is an edit, add new version to history
+            if (additionalPrompt && result.payload?.response?.imageUrl) {
+              const newEdit = {
+                id: Date.now().toString(),
+                imageUrl: result.payload.response.imageUrl,
+                prompt: additionalPrompt,
+                timestamp: new Date().toISOString()
+              };
+              setEditHistory(prev => {
+                const updated = [newEdit, ...prev].slice(0, 5); // Keep only last 5
+                return updated;
+              });
+            }
+
+            // Reset progress after showing 100% briefly
+            setTimeout(() => setLoadingProgress(0), 500);
+          })
+          .catch((error: any) => {
+            // Clear interval on error
+            clearInterval(progressInterval);
+            setLoadingProgress(0);
+
+            // Log error for debugging
+            console.error('Error generating creative:', error);
+
+            // Show user-friendly error message (could be enhanced with a toast notification)
+            alert('Failed to generate creative. Please try again. If the problem persists, check your connection and API keys.');
+          });
+
+      } catch (err) {
+        console.error("Flow error", err);
         clearInterval(progressInterval);
         setLoadingProgress(0);
-        
-        // Log error for debugging
-        console.error('Error generating creative:', error);
-        
-        // Show user-friendly error message (could be enhanced with a toast notification)
-        alert('Failed to generate creative. Please try again. If the problem persists, check your connection and API keys.');
-      });
+      }
+    };
+
+    runGenerationFlow();
   };
 
   const handleDownload = async () => {
     if (generatedCreatives.length === 0) return;
-    
+
     const imageUrl = generatedCreatives[0].imageUrl;
     try {
       const response = await fetch(imageUrl);
@@ -444,18 +479,17 @@ const Generator: React.FC = () => {
                   )}
                   <Icon name={showBrandSelector ? "expand_less" : "expand_more"} className="text-gray-400 flex-shrink-0" />
                 </button>
-                
+
                 {showBrandSelector && (
                   <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
                     <div className="p-2">
                       <button
                         type="button"
                         onClick={() => handleSelectBrand(null)}
-                        className={`w-full p-3 rounded-lg text-left transition-all mb-1 ${
-                          !currentBrandId
-                            ? 'bg-primary/10 border-2 border-primary'
-                            : 'hover:bg-gray-50 border-2 border-transparent'
-                        }`}
+                        className={`w-full p-3 rounded-lg text-left transition-all mb-1 ${!currentBrandId
+                          ? 'bg-primary/10 border-2 border-primary'
+                          : 'hover:bg-gray-50 border-2 border-transparent'
+                          }`}
                       >
                         <div className="font-semibold text-sm text-text-main">No brand</div>
                         <div className="text-xs text-gray-500">Use default settings</div>
@@ -465,11 +499,10 @@ const Generator: React.FC = () => {
                           key={brand.id}
                           type="button"
                           onClick={() => handleSelectBrand(brand.id)}
-                          className={`w-full p-3 rounded-lg transition-all mb-1 ${
-                            currentBrandId === brand.id
-                              ? 'bg-primary/10 border-2 border-primary'
-                              : 'hover:bg-gray-50 border-2 border-transparent'
-                          }`}
+                          className={`w-full p-3 rounded-lg transition-all mb-1 ${currentBrandId === brand.id
+                            ? 'bg-primary/10 border-2 border-primary'
+                            : 'hover:bg-gray-50 border-2 border-transparent'
+                            }`}
                           style={{
                             borderColor: currentBrandId === brand.id ? (brandColors?.primary || '#6366f1') : undefined
                           }}
@@ -526,8 +559,8 @@ const Generator: React.FC = () => {
               </div>
             </div>
             <h3 className="text-2xl font-bold text-gray-800 mb-3">
-              {currentBrandId && currentBrand 
-                ? `No Testimonials for ${currentBrand.name}` 
+              {currentBrandId && currentBrand
+                ? `No Testimonials for ${currentBrand.name}`
                 : 'No Testimonials Yet'}
             </h3>
             <p className="text-gray-500 mb-6 leading-relaxed">
@@ -605,18 +638,17 @@ const Generator: React.FC = () => {
                 )}
                 <Icon name={showBrandSelector ? "expand_less" : "expand_more"} className="text-gray-400 flex-shrink-0" />
               </button>
-              
+
               {showBrandSelector && (
                 <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
                   <div className="p-2">
                     <button
                       type="button"
                       onClick={() => handleSelectBrand(null)}
-                      className={`w-full p-3 rounded-lg text-left transition-all mb-1 ${
-                        !currentBrandId
-                          ? 'bg-primary/10 border-2 border-primary'
-                          : 'hover:bg-gray-50 border-2 border-transparent'
-                      }`}
+                      className={`w-full p-3 rounded-lg text-left transition-all mb-1 ${!currentBrandId
+                        ? 'bg-primary/10 border-2 border-primary'
+                        : 'hover:bg-gray-50 border-2 border-transparent'
+                        }`}
                     >
                       <div className="font-semibold text-sm text-text-main">No brand</div>
                       <div className="text-xs text-gray-500">Use default settings</div>
@@ -626,11 +658,10 @@ const Generator: React.FC = () => {
                         key={brand.id}
                         type="button"
                         onClick={() => handleSelectBrand(brand.id)}
-                        className={`w-full p-3 rounded-lg transition-all mb-1 ${
-                          currentBrandId === brand.id
-                            ? 'bg-primary/10 border-2 border-primary'
-                            : 'hover:bg-gray-50 border-2 border-transparent'
-                        }`}
+                        className={`w-full p-3 rounded-lg transition-all mb-1 ${currentBrandId === brand.id
+                          ? 'bg-primary/10 border-2 border-primary'
+                          : 'hover:bg-gray-50 border-2 border-transparent'
+                          }`}
                         style={{
                           borderColor: currentBrandId === brand.id ? (brandColors?.primary || '#6366f1') : undefined
                         }}
@@ -709,64 +740,63 @@ const Generator: React.FC = () => {
                 </button>
                 {isDropdownOpen && (
                   <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-96 overflow-y-auto">
-                      {filteredTestimonials.length === 0 ? (
-                        <div className="p-4 text-sm text-gray-500 text-center">
-                          {currentBrandId 
-                            ? `No reviews available for this brand. ${allTestimonials.length > 0 ? 'Switch to a different brand or select "No brand" to see all reviews.' : 'Add reviews in the Library.'}`
-                            : 'No testimonials available'}
-                        </div>
-                      ) : (
-                        filteredTestimonials.map((t, index) => {
-                          // Parse content to show title if available
-                          const content = t.content.trim();
-                          const doubleNewlineIndex = content.indexOf('\n\n');
-                          let displayText = content;
-                          let previewText = '';
-                          
-                          if (doubleNewlineIndex > 0) {
-                            const title = content.substring(0, doubleNewlineIndex).trim();
-                            const description = content.substring(doubleNewlineIndex + 2).trim();
-                            if (title.length > 0 && title.length < 150 && description.length > 0) {
-                              displayText = title;
-                              previewText = description;
-                            }
+                    {filteredTestimonials.length === 0 ? (
+                      <div className="p-4 text-sm text-gray-500 text-center">
+                        {currentBrandId
+                          ? `No reviews available for this brand. ${allTestimonials.length > 0 ? 'Switch to a different brand or select "No brand" to see all reviews.' : 'Add reviews in the Library.'}`
+                          : 'No testimonials available'}
+                      </div>
+                    ) : (
+                      filteredTestimonials.map((t, index) => {
+                        // Parse content to show title if available
+                        const content = t.content.trim();
+                        const doubleNewlineIndex = content.indexOf('\n\n');
+                        let displayText = content;
+                        let previewText = '';
+
+                        if (doubleNewlineIndex > 0) {
+                          const title = content.substring(0, doubleNewlineIndex).trim();
+                          const description = content.substring(doubleNewlineIndex + 2).trim();
+                          if (title.length > 0 && title.length < 150 && description.length > 0) {
+                            displayText = title;
+                            previewText = description;
                           }
-                          
-                          return (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedTestimonialId(t.id);
-                                setIsDropdownOpen(false);
-                              }}
-                              className={`w-full text-left p-4 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 ${
-                                selectedTestimonialId === t.id ? 'bg-primary/5' : ''
+                        }
+
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTestimonialId(t.id);
+                              setIsDropdownOpen(false);
+                            }}
+                            className={`w-full text-left p-4 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 ${selectedTestimonialId === t.id ? 'bg-primary/5' : ''
                               }`}
-                            >
-                              <div className="flex flex-col gap-1.5">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-xs font-semibold text-gray-500 uppercase">Review #{index + 1}</span>
-                                  <div className="flex items-center gap-1">
-                                    {Array.from({ length: 5 }).map((_, i) => (
-                                      <Icon key={i} name="star" size={14} fill={i < t.rating} className="text-yellow-400" />
-                                    ))}
-                                  </div>
+                          >
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-semibold text-gray-500 uppercase">Review #{index + 1}</span>
+                                <div className="flex items-center gap-1">
+                                  {Array.from({ length: 5 }).map((_, i) => (
+                                    <Icon key={i} name="star" size={14} fill={i < t.rating} className="text-yellow-400" />
+                                  ))}
                                 </div>
-                                <p className="text-sm font-semibold text-text-main leading-relaxed line-clamp-2">
-                                  {displayText}
-                                </p>
-                                {previewText && (
-                                  <p className="text-xs text-text-main/70 leading-relaxed line-clamp-2">
-                                    {previewText}
-                                  </p>
-                                )}
                               </div>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
+                              <p className="text-sm font-semibold text-text-main leading-relaxed line-clamp-2">
+                                {displayText}
+                              </p>
+                              {previewText && (
+                                <p className="text-xs text-text-main/70 leading-relaxed line-clamp-2">
+                                  {previewText}
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -920,9 +950,9 @@ const Generator: React.FC = () => {
               <div className="w-full">
                 <p className="text-primary font-bold text-center mb-3" style={{ color: brandColors?.primary || '#6366f1' }}>Designing your creative...</p>
                 <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                  <div 
+                  <div
                     className="h-full rounded-full transition-all duration-300 ease-out"
-                    style={{ 
+                    style={{
                       width: `${loadingProgress}%`,
                       backgroundColor: brandColors?.primary || '#6366f1'
                     }}
@@ -944,14 +974,14 @@ const Generator: React.FC = () => {
                   className={`object-contain bg-black ${generatedCreatives[0].format === 'Post' ? 'max-h-[500px] w-auto' : 'max-h-[600px] w-auto'}`}
                 />
                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 backdrop-blur-sm">
-                  <button 
+                  <button
                     onClick={handleDownload}
                     className="bg-white text-black px-6 py-2.5 rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2"
                   >
                     <Icon name="download" />
                     Download
                   </button>
-                  <button 
+                  <button
                     onClick={handleEditClick}
                     className="bg-black/50 text-white border border-white/20 px-6 py-2.5 rounded-full font-bold hover:bg-black/70 transition-all flex items-center gap-2"
                   >
@@ -969,8 +999,8 @@ const Generator: React.FC = () => {
                   </h3>
                   <div className="grid grid-cols-5 gap-3">
                     {editHistory.map((edit, index) => (
-                      <div 
-                        key={edit.id} 
+                      <div
+                        key={edit.id}
                         className="group relative rounded-lg overflow-hidden border border-gray-200 bg-black cursor-pointer hover:border-primary transition-colors"
                         onClick={() => {
                           // Clicking a previous version could restore it (optional feature)
