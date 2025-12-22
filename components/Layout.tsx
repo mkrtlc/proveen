@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import logo from '../assets/proveen_logo.png';
 import { useAppSelector, useAppDispatch } from '../store'; // Added imports
 import { updateSourceReviews } from '../store/slices/reviewsSlice';
@@ -144,13 +144,28 @@ const Sidebar: React.FC = () => {
 
 const Header: React.FC = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [userName, setUserName] = useState<string>('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      navigate('/login'); // Redirect to login page
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsNotificationsOpen(false);
+      }
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
       }
     }
 
@@ -233,14 +248,46 @@ const Header: React.FC = () => {
           )}
         </div>
         <div className="h-8 w-px bg-gray-200 mx-1"></div>
-        <button className="flex items-center gap-2 group">
-          <div className="size-9 rounded-full bg-cover bg-center border-2 border-white shadow-sm" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuDYWcVaCpc_AHvteRWcO6zheKA6OBOkijtvpzgXKIWeScCK_ETFMVt44n8ZH7a1LgrQO9mqTerB1LnUnwoQepC_P62zQOHhcld2CFxukH8tvwi3omQf62DZ9aPDYt0uwDY7fRgiSJTKHjv-nRshi7_22Yk-cj2nz_J6hNnzzOI4P-FynOgCs-AO5VceglbCxwGs9pesL3pn7VtqwKtUXI6aSzdscQ7URR8h0lnAZelhP-6mToIxIV4UiqkwQPjTOB3kQ9v6UcIfWvfJ')" }}></div>
-          <div className="hidden md:flex flex-col items-start">
-            <span className="text-sm font-medium text-text-main leading-tight">{userName || 'User'}</span>
-            <span className="text-xs text-gray-500">Admin</span>
-          </div>
-          <Icon name="expand_more" size={20} className="text-gray-400" />
-        </button>
+
+        <div className="relative" ref={profileDropdownRef}>
+          <button
+            className="flex items-center gap-2 group"
+            onClick={() => setIsProfileOpen(!isProfileOpen)}
+          >
+            <div className="size-9 rounded-full bg-cover bg-center border-2 border-white shadow-sm" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuDYWcVaCpc_AHvteRWcO6zheKA6OBOkijtvpzgXKIWeScCK_ETFMVt44n8ZH7a1LgrQO9mqTerB1LnUnwoQepC_P62zQOHhcld2CFxukH8tvwi3omQf62DZ9aPDYt0uwDY7fRgiSJTKHjv-nRshi7_22Yk-cj2nz_J6hNnzzOI4P-FynOgCs-AO5VceglbCxwGs9pesL3pn7VtqwKtUXI6aSzdscQ7URR8h0lnAZelhP-6mToIxIV4UiqkwQPjTOB3kQ9v6UcIfWvfJ')" }}></div>
+            <div className="hidden md:flex flex-col items-start">
+              <span className="text-sm font-medium text-text-main leading-tight">{userName || 'User'}</span>
+              <span className="text-xs text-gray-500">Admin</span>
+            </div>
+            <Icon name="expand_more" size={20} className={`text-gray-400 transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {isProfileOpen && (
+            <div className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-in fade-in zoom-in-95 duration-200">
+              <div className="px-4 py-2 border-b border-gray-50 md:hidden">
+                <p className="text-sm font-medium text-text-main">{userName || 'User'}</p>
+                <p className="text-xs text-gray-500">Admin</p>
+              </div>
+              <button
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                onClick={() => {
+                  // Add navigation to profile/settings if needed
+                  setIsProfileOpen(false);
+                }}
+              >
+                <Icon name="person" size={18} />
+                Profile
+              </button>
+              <button
+                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                onClick={handleSignOut}
+              >
+                <Icon name="logout" size={18} />
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
