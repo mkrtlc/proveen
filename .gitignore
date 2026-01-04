@@ -1,66 +1,43 @@
-# Ignore project planning and strategy documents
-business-layers.md
-technical-layers.md
-strategy.md
-todo.md
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Node modules
-node_modules/
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-*.local
+# testing
+/coverage
 
-# Logs
-logs
-*.log
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+.pnpm-debug.log*
 
-# OS files
-.DS_Store
-Thumbs.db
+# env files (can opt-in for committing if needed)
+.env*
 
-# IDE
-.vscode/*
-!.vscode/extensions.json
-.idea
-*.swp
-*.swo
-*.sw?
-*~
+# vercel
+.vercel
 
-# Windows/Visual Studio
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-
-# Build outputs
-dist/
-dist-ssr/
-build/
-.next/
-out/
-
-# Testing
-coverage/
-.nyc_output/
-
-
-# Temporary files
-*.tmp
-.cache/
-
-# Local Environment & Scratch
-local/
-.venv/
-venv/
-env/
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+backup_vite_project/
+.vite/
